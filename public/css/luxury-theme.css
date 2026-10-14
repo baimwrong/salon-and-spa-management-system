@@ -1,0 +1,263 @@
+/* Salon & Spa - Luxury Theme System */
+:root {
+    --aura-primary: #1e2532;
+    --aura-primary-light: #2c3649;
+    --aura-gold: #c59b27;
+    --aura-gold-light: #e6ca65;
+    --aura-gold-subtle: #fcf8ee;
+    --aura-rose: #d67d71;
+    --aura-rose-soft: #fbf0ee;
+    --aura-bg: #f8fafc;
+    --aura-card-bg: #ffffff;
+    --aura-sidebar-bg: #131722;
+    --aura-sidebar-hover: #1e2436;
+    --aura-text-main: #1e293b;
+    --aura-text-muted: #64748b;
+    --aura-border: #e2e8f0;
+    --aura-radius: 12px;
+}
+
+body {
+    background-color: var(--aura-bg);
+    color: var(--aura-text-main);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    min-height: 100vh;
+}
+
+/* Sidebar Styling */
+.aura-sidebar {
+    width: 260px;
+    background-color: var(--aura-sidebar-bg);
+    min-height: 100vh;
+    transition: all 0.3s ease;
+    z-index: 1040;
+}
+
+.aura-brand {
+    padding: 1.5rem 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.aura-brand-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #ffffff;
+}
+
+.aura-brand-gold {
+    color: var(--aura-gold-light);
+}
+
+.aura-brand-subtitle {
+    font-size: 0.72rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.aura-nav-link {
+    color: #94a3b8;
+    padding: 0.75rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    font-size: 0.92rem;
+    font-weight: 500;
+    border-radius: 8px;
+    margin: 0.2rem 0.75rem;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.aura-nav-link:hover {
+    color: #ffffff;
+    background-color: var(--aura-sidebar-hover);
+}
+
+.aura-nav-link.active {
+    color: #ffffff;
+    background: linear-gradient(90deg, rgba(197, 155, 39, 0.25) 0%, rgba(197, 155, 39, 0.1) 100%);
+    border-left: 3px solid var(--aura-gold);
+    font-weight: 600;
+}
+
+.aura-nav-header {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #64748b;
+    padding: 1rem 1.25rem 0.4rem;
+    font-weight: 700;
+}
+
+/* Header & Topbar */
+.aura-topbar {
+    height: 70px;
+    background-color: #ffffff;
+    border-bottom: 1px solid var(--aura-border);
+    padding: 0 1.75rem;
+}
+
+/* Card Styling */
+.aura-card {
+    background-color: var(--aura-card-bg);
+    border: 1px solid var(--aura-border);
+    border-radius: var(--aura-radius);
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.aura-card-header {
+    background-color: transparent;
+    border-bottom: 1px solid var(--aura-border);
+    padding: 1.25rem 1.5rem;
+}
+
+/* Metric / KPI Cards */
+.aura-stat-card {
+    padding: 1.5rem;
+    border-radius: var(--aura-radius);
+    background: #ffffff;
+    border: 1px solid var(--aura-border);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
+}
+
+.aura-stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+}
+
+.aura-icon-gold {
+    background-color: var(--aura-gold-subtle);
+    color: var(--aura-gold);
+}
+
+.aura-icon-rose {
+    background-color: var(--aura-rose-soft);
+    color: var(--aura-rose);
+}
+
+.aura-icon-blue {
+    background-color: #eff6ff;
+    color: #3b82f6;
+}
+
+.aura-icon-green {
+    background-color: #f0fdf4;
+    color: #22c55e;
+}
+
+/* Custom Soft Badges */
+.badge-soft-success {
+    background-color: #dcfce7;
+    color: #15803d;
+}
+
+.badge-soft-warning {
+    background-color: #fef3c7;
+    color: #b45309;
+}
+
+.badge-soft-info {
+    background-color: #e0f2fe;
+    color: #0369a1;
+}
+
+.badge-soft-primary {
+    background-color: #e0e7ff;
+    color: #4338ca;
+}
+
+.badge-soft-danger {
+    background-color: #fee2e2;
+    color: #b91c1c;
+}
+
+.badge-soft-gold {
+    background-color: #fef9c3;
+    color: #854d0e;
+    border: 1px solid #fef08a;
+}
+
+/* Button Accents */
+.btn-aura-primary {
+    background-color: var(--aura-primary);
+    color: #ffffff;
+    border: 1px solid var(--aura-primary);
+    font-weight: 500;
+    border-radius: 8px;
+    padding: 0.5rem 1.2rem;
+}
+
+.btn-aura-primary:hover {
+    background-color: var(--aura-primary-light);
+    color: #ffffff;
+}
+
+.btn-aura-gold {
+    background-color: var(--aura-gold);
+    color: #ffffff;
+    border: 1px solid var(--aura-gold);
+    font-weight: 500;
+    border-radius: 8px;
+    padding: 0.5rem 1.2rem;
+}
+
+.btn-aura-gold:hover {
+    background-color: #b3891d;
+    color: #ffffff;
+}
+
+/* POS Terminal */
+.pos-catalog-scroll {
+    max-height: calc(100vh - 230px);
+    overflow-y: auto;
+}
+
+.pos-cart-scroll {
+    max-height: calc(100vh - 460px);
+    overflow-y: auto;
+}
+
+.pos-item-card {
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid var(--aura-border);
+}
+
+.pos-item-card:hover {
+    border-color: var(--aura-gold);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(197, 155, 39, 0.15);
+}
+
+/* Printable Thermal Receipt Styles */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    #printableReceipt, #printableReceipt * {
+        visibility: visible;
+    }
+    #printableReceipt {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        max-width: 80mm;
+        margin: 0 auto;
+        padding: 10px;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 12px;
+        color: #000;
+    }
+    .no-print {
+        display: none !important;
+    }
+}
