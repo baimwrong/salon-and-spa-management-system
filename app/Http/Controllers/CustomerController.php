@@ -11,15 +11,17 @@ class CustomerController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Customer::with('preferredTherapist');
+        $query = Customer::with('preferredTherapist')
+            ->withSum(['invoices as total_spend' => fn($q) => $q->where('payment_status', 'paid')], 'total_amount')
+            ->withCount(['appointments as completed_visits_count' => fn($q) => $q->where('status', 'completed')]);
 
         if ($request->filled('search')) {
-            $search = $request->input('search');
+            $search = strtolower(trim($request->input('search')));
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'ilike', "%{$search}%")
+                $q->whereRaw('LOWER(name) LIKE ?', ["%{$search}%"])
                     ->orWhere('phone', 'like', "%{$search}%")
-                    ->orWhere('email', 'ilike', "%{$search}%")
-                    ->orWhere('customer_code', 'ilike', "%{$search}%");
+                    ->orWhereRaw('LOWER(email) LIKE ?', ["%{$search}%"])
+                    ->orWhereRaw('LOWER(customer_code) LIKE ?', ["%{$search}%"]);
             });
         }
 
@@ -111,6 +113,10 @@ class CustomerController extends Controller
 
     public function destroy(Customer $customer)
     {
+        if ($customer->invoices()->exists() || $customer->appointments()->where('status', '!=', 'cancelled')->exists()) {
+            return back()->with('error', "Cannot delete {$customer->name} because active booking or financial invoice history exists. Set client status to 'blocked' or 'inactive' instead.");
+        }
+
         $customer->delete();
         return redirect()->route('customers.index')->with('success', 'Customer record deleted.');
     }

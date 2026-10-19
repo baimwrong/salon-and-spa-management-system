@@ -27,7 +27,9 @@ Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
     Route::post('/login', [AuthController::class, 'login']);
 });
-Route::get('/quick-login/{role}', [AuthController::class, 'quickLogin'])->name('quick.login');
+if (app()->environment('local')) {
+    Route::get('/quick-login/{role}', [AuthController::class, 'quickLogin'])->name('quick.login');
+}
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout')->middleware('auth');
 
 // Protected Application Routes
@@ -36,7 +38,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // Appointments & Scheduling
-    Route::resource('appointments', AppointmentController::class)->except(['edit', 'update']);
+    Route::resource('appointments', AppointmentController::class);
     Route::post('appointments/{appointment}/status', [AppointmentController::class, 'updateStatus'])->name('appointments.status');
 
     // Customer Relationship Management (CRM)

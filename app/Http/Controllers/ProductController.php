@@ -29,11 +29,11 @@ class ProductController extends Controller
         }
 
         if ($request->filled('search')) {
-            $search = $request->input('search');
+            $search = strtolower(trim($request->input('search')));
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'ilike', "%{$search}%")
-                    ->orWhere('sku', 'ilike', "%{$search}%")
-                    ->orWhere('brand', 'ilike', "%{$search}%");
+                $q->whereRaw('LOWER(name) LIKE ?', ["%{$search}%"])
+                    ->orWhereRaw('LOWER(sku) LIKE ?', ["%{$search}%"])
+                    ->orWhereRaw('LOWER(brand) LIKE ?', ["%{$search}%"]);
             });
         }
 
@@ -154,6 +154,10 @@ class ProductController extends Controller
 
     public function destroy(Product $product)
     {
+        if ($product->invoiceItems()->exists()) {
+            return back()->with('error', "Cannot delete product '{$product->name}' because it has historical sales on invoices. Set it to inactive instead.");
+        }
+
         $product->delete();
         return redirect()->route('products.index')->with('success', 'Product deleted from inventory.');
     }

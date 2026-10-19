@@ -94,4 +94,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(Invoice::class, 'cashier_id');
     }
+
+    public function invoiceItems(): HasMany
+    {
+        return $this->hasMany(InvoiceItem::class, 'therapist_id');
+    }
 }

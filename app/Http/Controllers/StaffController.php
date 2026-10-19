@@ -22,11 +22,11 @@ class StaffController extends Controller
         }
 
         if ($request->filled('search')) {
-            $search = $request->input('search');
+            $search = strtolower($request->input('search'));
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'ilike', "%{$search}%")
-                    ->orWhere('email', 'ilike', "%{$search}%")
-                    ->orWhere('specialization', 'ilike', "%{$search}%");
+                $q->whereRaw('LOWER(name) LIKE ?', ["%{$search}%"])
+                    ->orWhereRaw('LOWER(email) LIKE ?', ["%{$search}%"])
+                    ->orWhereRaw('LOWER(specialization) LIKE ?', ["%{$search}%"]);
             });
         }
 
@@ -53,6 +53,10 @@ class StaffController extends Controller
             'status' => ['required', 'string', 'in:active,inactive,on_leave'],
             'bio' => ['nullable', 'string'],
         ]);
+
+        if ($validated['role'] === 'admin' && !auth()->user()->isAdmin()) {
+            return back()->with('error', 'Only administrators can create admin accounts.')->withInput();
+        }
 
         $validated['password'] = Hash::make($validated['password']);
 
@@ -95,6 +99,10 @@ class StaffController extends Controller
 
     public function update(Request $request, User $user)
     {
+        if ($user->isAdmin() && !auth()->user()->isAdmin()) {
+            return back()->with('error', 'Only administrators can modify an administrator account.');
+        }
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email,' . $user->id],
@@ -106,6 +114,10 @@ class StaffController extends Controller
             'status' => ['required', 'string', 'in:active,inactive,on_leave'],
             'bio' => ['nullable', 'string'],
         ]);
+
+        if ($validated['role'] === 'admin' && !auth()->user()->isAdmin()) {
+            return back()->with('error', 'Only administrators can assign the admin role.')->withInput();
+        }
 
         if (!empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);
@@ -122,6 +134,14 @@ class StaffController extends Controller
     {
         if ($user->id === auth()->id()) {
             return back()->with('error', 'You cannot delete your own account.');
+        }
+
+        if ($user->isAdmin() && !auth()->user()->isAdmin()) {
+            return back()->with('error', 'Only administrators can delete an administrator account.');
+        }
+
+        if ($user->therapistAppointments()->exists() || $user->processedInvoices()->exists() || $user->commissionPayouts()->exists()) {
+            return back()->with('error', "Cannot delete '{$user->name}' because they have associated appointment, invoice, or commission history. You can change their status to 'inactive' instead.");
         }
 
         $user->delete();

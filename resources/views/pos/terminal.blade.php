@@ -186,8 +186,8 @@
 @push('scripts')
 <script>
 let cart = [];
-const therapistsList = {!! json_encode($therapists) !!};
-const preloadedApt = {!! json_encode($selectedAppointment) !!};
+const therapistsList = {{ Js::from($therapists) }};
+const preloadedApt = {{ Js::from($selectedAppointment) }};
 
 document.addEventListener('DOMContentLoaded', function () {
     // If opened with preloaded appointment, populate cart
@@ -211,7 +211,11 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById(id).addEventListener('input', updateTotals);
     });
 
-    document.getElementById('paidAmountInput').addEventListener('input', calculateChange);
+    const paidInput = document.getElementById('paidAmountInput');
+    paidInput.addEventListener('input', function() {
+        this.dataset.touched = 'true';
+        calculateChange();
+    });
 });
 
 function addToCart(type, id, name, price, therapistId = null) {
@@ -248,6 +252,10 @@ function updateItemTherapist(index, tId) {
     cart[index].therapist_id = tId ? parseInt(tId) : null;
 }
 
+function escapeAttr(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function renderCart() {
     const container = document.getElementById('cartItemsList');
     const notice = document.getElementById('emptyCartNotice');
@@ -281,7 +289,7 @@ function renderCart() {
                     <span class="badge ${item.type === 'service' ? 'bg-primary' : 'bg-success'} me-1" style="font-size: 0.65rem;">
                         ${item.type.toUpperCase()}
                     </span>
-                    <span class="fw-semibold small">${item.name}</span>
+                    <span class="fw-semibold small">${escapeAttr(item.name)}</span>
                 </div>
                 <button type="button" class="btn btn-sm btn-link text-danger p-0 ms-2" onclick="removeCartItem(${index})">
                     <i class="bi bi-trash3"></i>
@@ -308,7 +316,7 @@ function renderCart() {
             <!-- Hidden inputs for form POST -->
             <input type="hidden" name="items[${index}][type]" value="${item.type}">
             <input type="hidden" name="items[${index}][id]" value="${item.id}">
-            <input type="hidden" name="items[${index}][name]" value="${item.name}">
+            <input type="hidden" name="items[${index}][name]" value="${escapeAttr(item.name)}">
             <input type="hidden" name="items[${index}][quantity]" value="${item.quantity}">
             <input type="hidden" name="items[${index}][price]" value="${item.price}">
             <input type="hidden" name="items[${index}][therapist_id]" value="${item.therapist_id || ''}">

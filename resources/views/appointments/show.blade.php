@@ -13,6 +13,9 @@
 
             <div class="d-flex gap-2">
                 @if($appointment->status !== 'completed' && $appointment->status !== 'cancelled')
+                    <a href="{{ route('appointments.edit', $appointment) }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-pencil me-1"></i>Reschedule / Edit
+                    </a>
                     <a href="{{ route('pos.terminal', ['appointment_id' => $appointment->id]) }}" class="btn btn-sm btn-aura-gold shadow-sm">
                         <i class="bi bi-cash-coin me-1"></i>Proceed to POS Checkout
                     </a>
@@ -39,6 +42,13 @@
             </div>
 
             <div class="card-body p-4">
+                @if($appointment->status === 'cancelled' && $appointment->cancellation_reason)
+                    <div class="alert alert-danger py-2 px-3 small d-flex align-items-center gap-2 mb-4">
+                        <i class="bi bi-x-octagon-fill fs-5"></i>
+                        <div><strong>Cancellation Reason:</strong> {{ $appointment->cancellation_reason }}</div>
+                    </div>
+                @endif
+
                 <div class="row g-4 mb-4">
                     <!-- Client Profile Section -->
                     <div class="col-12 col-md-6 border-end">
@@ -129,25 +139,25 @@
                     <h6 class="fw-bold small text-uppercase mb-2">Update Booking Workflow Status:</h6>
                     <form method="POST" action="{{ route('appointments.status', $appointment) }}" class="d-flex flex-wrap gap-2 align-items-center">
                         @csrf
-                        @if($appointment->status !== 'in_service')
+                        @if($appointment->status !== 'in_service' && $appointment->status !== 'completed' && $appointment->status !== 'cancelled')
                             <button type="submit" name="status" value="in_service" class="btn btn-sm btn-primary">
                                 <i class="bi bi-play-circle me-1"></i>Start Treatment (In-Service)
                             </button>
                         @endif
 
-                        @if($appointment->status !== 'completed')
+                        @if($appointment->status !== 'completed' && $appointment->status !== 'cancelled')
                             <button type="submit" name="status" value="completed" class="btn btn-sm btn-success">
                                 <i class="bi bi-check2-circle me-1"></i>Mark Completed
                             </button>
                         @endif
 
-                        @if($appointment->status !== 'cancelled')
-                            <button type="submit" name="status" value="cancelled" class="btn btn-sm btn-outline-danger" onclick="return confirm('Cancel this appointment?')">
-                                <i class="bi bi-x-circle me-1"></i>Cancel Booking
+                        @if($appointment->status !== 'cancelled' && $appointment->status !== 'completed')
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#cancelModal">
+                                <i class="bi bi-x-circle me-1"></i>Cancel Booking...
                             </button>
                         @endif
 
-                        @if($appointment->status !== 'no_show')
+                        @if($appointment->status !== 'no_show' && $appointment->status !== 'completed' && $appointment->status !== 'cancelled')
                             <button type="submit" name="status" value="no_show" class="btn btn-sm btn-outline-secondary">
                                 <i class="bi bi-person-x me-1"></i>Mark No-Show
                             </button>
@@ -156,6 +166,31 @@
                 </div>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Cancellation Reason Modal -->
+<div class="modal fade" id="cancelModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{{ route('appointments.status', $appointment) }}">
+            @csrf
+            <input type="hidden" name="status" value="cancelled">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold">Cancel Appointment #{{ $appointment->appointment_number }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted mb-3">Please provide a reason for cancelling this appointment.</p>
+                    <label class="form-label small fw-semibold">Cancellation Reason</label>
+                    <textarea name="cancellation_reason" class="form-control" rows="3" placeholder="e.g. Client requested via phone, illness, scheduling conflict..." required></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-light border" data-bs-dismiss="modal">Keep Appointment</button>
+                    <button type="submit" class="btn btn-sm btn-danger fw-bold">Confirm Cancellation</button>
+                </div>
+            </div>
+        </form>
     </div>
 </div>
 @endsection

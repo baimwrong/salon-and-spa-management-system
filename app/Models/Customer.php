@@ -53,11 +53,17 @@ class Customer extends Model
 
     public function getTotalSpendAttribute(): float
     {
+        if (array_key_exists('total_spend', $this->attributes)) {
+            return (float) ($this->attributes['total_spend'] ?? 0);
+        }
         return (float) $this->invoices()->where('payment_status', 'paid')->sum('total_amount');
     }
 
     public function getCompletedVisitsCountAttribute(): int
     {
+        if (array_key_exists('completed_visits_count', $this->attributes)) {
+            return (int) ($this->attributes['completed_visits_count'] ?? 0);
+        }
         return $this->appointments()->where('status', 'completed')->count();
     }
 }

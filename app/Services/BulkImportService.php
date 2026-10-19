@@ -142,37 +142,37 @@ class BulkImportService
             }
 
             try {
-                $customer = Customer::where('phone', $d['phone'])->first();
+                DB::transaction(function () use ($d, $updateExisting, $line) {
+                    $customer = Customer::where('phone', $d['phone'])->first();
 
-                if ($customer && !$updateExisting) {
-                    $failed++;
-                    $errors[] = ['line' => $line, 'error' => "Customer with phone {$d['phone']} already exists."];
-                    continue;
-                }
+                    if ($customer && !$updateExisting) {
+                        throw new \RuntimeException("Customer with phone {$d['phone']} already exists.");
+                    }
 
-                $customerCode = $customer ? $customer->customer_code : ($d['customer_code'] ?? 'CUST-' . strtoupper(Str::random(6)));
+                    $customerCode = $customer ? $customer->customer_code : ($d['customer_code'] ?? 'CUST-' . strtoupper(Str::random(6)));
 
-                $payload = [
-                    'customer_code' => $customerCode,
-                    'name' => $d['name'],
-                    'email' => !empty($d['email']) ? $d['email'] : null,
-                    'phone' => $d['phone'],
-                    'gender' => !empty($d['gender']) ? strtolower($d['gender']) : null,
-                    'date_of_birth' => !empty($d['date_of_birth']) ? date('Y-m-d', strtotime($d['date_of_birth'])) : null,
-                    'address' => $d['address'] ?? null,
-                    'skin_type' => $d['skin_type'] ?? null,
-                    'hair_type' => $d['hair_type'] ?? null,
-                    'allergies' => $d['allergies'] ?? null,
-                    'loyalty_points' => isset($d['loyalty_points']) ? (int) $d['loyalty_points'] : 0,
-                    'notes' => $d['notes'] ?? null,
-                    'status' => !empty($d['status']) ? strtolower($d['status']) : 'active',
-                ];
+                    $payload = [
+                        'customer_code' => $customerCode,
+                        'name' => $d['name'],
+                        'email' => !empty($d['email']) ? $d['email'] : null,
+                        'phone' => $d['phone'],
+                        'gender' => !empty($d['gender']) ? strtolower($d['gender']) : null,
+                        'date_of_birth' => !empty($d['date_of_birth']) ? date('Y-m-d', strtotime($d['date_of_birth'])) : null,
+                        'address' => $d['address'] ?? null,
+                        'skin_type' => $d['skin_type'] ?? null,
+                        'hair_type' => $d['hair_type'] ?? null,
+                        'allergies' => $d['allergies'] ?? null,
+                        'loyalty_points' => isset($d['loyalty_points']) ? (int) $d['loyalty_points'] : 0,
+                        'notes' => $d['notes'] ?? null,
+                        'status' => !empty($d['status']) ? strtolower($d['status']) : 'active',
+                    ];
 
-                if ($customer) {
-                    $customer->update($payload);
-                } else {
-                    Customer::create($payload);
-                }
+                    if ($customer) {
+                        $customer->update($payload);
+                    } else {
+                        Customer::create($payload);
+                    }
+                });
 
                 $success++;
             } catch (\Throwable $e) {
@@ -204,40 +204,40 @@ class BulkImportService
             }
 
             try {
-                // Find or create category
-                $categoryName = !empty($d['category']) ? trim($d['category']) : 'General Services';
-                $category = ServiceCategory::firstOrCreate(
-                    ['name' => $categoryName],
-                    ['slug' => Str::slug($categoryName), 'description' => $categoryName . ' category', 'icon' => 'bi-stars']
-                );
+                DB::transaction(function () use ($d, $updateExisting) {
+                    // Find or create category
+                    $categoryName = !empty($d['category']) ? trim($d['category']) : 'General Services';
+                    $category = ServiceCategory::firstOrCreate(
+                        ['name' => $categoryName],
+                        ['slug' => Str::slug($categoryName), 'description' => $categoryName . ' category', 'icon' => 'bi-stars']
+                    );
 
-                $service = Service::where('code', $d['code'])->first();
+                    $service = Service::where('code', $d['code'])->first();
 
-                if ($service && !$updateExisting) {
-                    $failed++;
-                    $errors[] = ['line' => $line, 'error' => "Service with code {$d['code']} already exists."];
-                    continue;
-                }
+                    if ($service && !$updateExisting) {
+                        throw new \RuntimeException("Service with code {$d['code']} already exists.");
+                    }
 
-                $payload = [
-                    'category_id' => $category->id,
-                    'code' => strtoupper($d['code']),
-                    'name' => $d['name'],
-                    'slug' => Str::slug($d['name']),
-                    'description' => $d['description'] ?? null,
-                    'duration_minutes' => !empty($d['duration_minutes']) ? (int) $d['duration_minutes'] : 60,
-                    'buffer_time_minutes' => isset($d['buffer_time_minutes']) ? (int) $d['buffer_time_minutes'] : 10,
-                    'price' => (float) $d['price'],
-                    'cost_price' => !empty($d['cost_price']) ? (float) $d['cost_price'] : 0.00,
-                    'is_active' => isset($d['is_active']) ? filter_var($d['is_active'], FILTER_VALIDATE_BOOLEAN) : true,
-                    'requires_room' => isset($d['requires_room']) ? filter_var($d['requires_room'], FILTER_VALIDATE_BOOLEAN) : false,
-                ];
+                    $payload = [
+                        'category_id' => $category->id,
+                        'code' => strtoupper($d['code']),
+                        'name' => $d['name'],
+                        'slug' => Str::slug($d['name']),
+                        'description' => $d['description'] ?? null,
+                        'duration_minutes' => !empty($d['duration_minutes']) ? (int) $d['duration_minutes'] : 60,
+                        'buffer_time_minutes' => isset($d['buffer_time_minutes']) ? (int) $d['buffer_time_minutes'] : 10,
+                        'price' => (float) $d['price'],
+                        'cost_price' => !empty($d['cost_price']) ? (float) $d['cost_price'] : 0.00,
+                        'is_active' => isset($d['is_active']) ? filter_var($d['is_active'], FILTER_VALIDATE_BOOLEAN) : true,
+                        'requires_room' => isset($d['requires_room']) ? filter_var($d['requires_room'], FILTER_VALIDATE_BOOLEAN) : false,
+                    ];
 
-                if ($service) {
-                    $service->update($payload);
-                } else {
-                    Service::create($payload);
-                }
+                    if ($service) {
+                        $service->update($payload);
+                    } else {
+                        Service::create($payload);
+                    }
+                });
 
                 $success++;
             } catch (\Throwable $e) {
@@ -269,55 +269,55 @@ class BulkImportService
             }
 
             try {
-                $categoryName = !empty($d['category']) ? trim($d['category']) : 'General Supplies';
-                $category = ProductCategory::firstOrCreate(
-                    ['name' => $categoryName],
-                    ['slug' => Str::slug($categoryName), 'description' => $categoryName]
-                );
+                DB::transaction(function () use ($d, $updateExisting, $userId) {
+                    $categoryName = !empty($d['category']) ? trim($d['category']) : 'General Supplies';
+                    $category = ProductCategory::firstOrCreate(
+                        ['name' => $categoryName],
+                        ['slug' => Str::slug($categoryName), 'description' => $categoryName]
+                    );
 
-                $product = Product::where('sku', $d['sku'])->first();
+                    $product = Product::where('sku', $d['sku'])->first();
 
-                if ($product && !$updateExisting) {
-                    $failed++;
-                    $errors[] = ['line' => $line, 'error' => "Product with SKU {$d['sku']} already exists."];
-                    continue;
-                }
-
-                $initialStock = isset($d['stock_quantity']) ? (int) $d['stock_quantity'] : 0;
-
-                $payload = [
-                    'category_id' => $category->id,
-                    'sku' => strtoupper($d['sku']),
-                    'barcode' => $d['barcode'] ?? null,
-                    'name' => $d['name'],
-                    'brand' => $d['brand'] ?? null,
-                    'type' => !empty($d['type']) ? strtolower($d['type']) : 'both',
-                    'description' => $d['description'] ?? null,
-                    'cost_price' => !empty($d['cost_price']) ? (float) $d['cost_price'] : 0.00,
-                    'retail_price' => (float) $d['retail_price'],
-                    'stock_quantity' => $initialStock,
-                    'low_stock_threshold' => !empty($d['low_stock_threshold']) ? (int) $d['low_stock_threshold'] : 5,
-                    'unit' => !empty($d['unit']) ? $d['unit'] : 'piece',
-                    'is_active' => isset($d['is_active']) ? filter_var($d['is_active'], FILTER_VALIDATE_BOOLEAN) : true,
-                ];
-
-                if ($product) {
-                    $product->update($payload);
-                } else {
-                    $product = Product::create($payload);
-
-                    if ($initialStock > 0) {
-                        StockMovement::create([
-                            'product_id' => $product->id,
-                            'user_id' => $userId,
-                            'type' => 'restock',
-                            'quantity' => $initialStock,
-                            'unit_cost' => $payload['cost_price'],
-                            'reference_number' => 'INITIAL-IMPORT',
-                            'notes' => 'Initial bulk import stock balance',
-                        ]);
+                    if ($product && !$updateExisting) {
+                        throw new \RuntimeException("Product with SKU {$d['sku']} already exists.");
                     }
-                }
+
+                    $initialStock = isset($d['stock_quantity']) ? (int) $d['stock_quantity'] : 0;
+
+                    $payload = [
+                        'category_id' => $category->id,
+                        'sku' => strtoupper($d['sku']),
+                        'barcode' => $d['barcode'] ?? null,
+                        'name' => $d['name'],
+                        'brand' => $d['brand'] ?? null,
+                        'type' => !empty($d['type']) ? strtolower($d['type']) : 'both',
+                        'description' => $d['description'] ?? null,
+                        'cost_price' => !empty($d['cost_price']) ? (float) $d['cost_price'] : 0.00,
+                        'retail_price' => (float) $d['retail_price'],
+                        'stock_quantity' => $initialStock,
+                        'low_stock_threshold' => !empty($d['low_stock_threshold']) ? (int) $d['low_stock_threshold'] : 5,
+                        'unit' => !empty($d['unit']) ? $d['unit'] : 'piece',
+                        'is_active' => isset($d['is_active']) ? filter_var($d['is_active'], FILTER_VALIDATE_BOOLEAN) : true,
+                    ];
+
+                    if ($product) {
+                        $product->update($payload);
+                    } else {
+                        $product = Product::create($payload);
+
+                        if ($initialStock > 0) {
+                            StockMovement::create([
+                                'product_id' => $product->id,
+                                'user_id' => $userId,
+                                'type' => 'restock',
+                                'quantity' => $initialStock,
+                                'unit_cost' => $payload['cost_price'],
+                                'reference_number' => 'INITIAL-IMPORT',
+                                'notes' => 'Initial bulk import stock balance',
+                            ]);
+                        }
+                    }
+                });
 
                 $success++;
             } catch (\Throwable $e) {
@@ -348,50 +348,52 @@ class BulkImportService
                 continue;
             }
 
+            $requestedRole = !empty($d['role']) ? strtolower(trim($d['role'])) : 'therapist';
+            if ($requestedRole === 'admin') {
+                $failed++;
+                $errors[] = ['line' => $line, 'error' => 'Security: Administrator accounts cannot be created or modified via bulk CSV import.'];
+                continue;
+            }
+
             try {
-                $user = User::where('email', $d['email'])->first();
+                DB::transaction(function () use ($d, $updateExisting, $requestedRole) {
+                    $user = User::where('email', $d['email'])->first();
 
-                if ($user && !$updateExisting) {
-                    $failed++;
-                    $errors[] = ['line' => $line, 'error' => "User with email {$d['email']} already exists."];
-                    continue;
-                }
+                    if ($user && !$updateExisting) {
+                        throw new \RuntimeException("User with email {$d['email']} already exists.");
+                    }
 
-                $role = !empty($d['role']) ? strtolower($d['role']) : 'therapist';
-                if (!in_array($role, ['admin', 'manager', 'receptionist', 'therapist'])) {
-                    $role = 'therapist';
-                }
+                    $role = in_array($requestedRole, ['manager', 'receptionist', 'therapist']) ? $requestedRole : 'therapist';
 
-                $payload = [
-                    'name' => $d['name'],
-                    'email' => $d['email'],
-                    'role' => $role,
-                    'phone' => $d['phone'] ?? null,
-                    'specialization' => $d['specialization'] ?? null,
-                    'commission_rate' => isset($d['commission_rate']) ? (float) $d['commission_rate'] : 0.00,
-                    'status' => !empty($d['status']) ? strtolower($d['status']) : 'active',
-                    'bio' => $d['bio'] ?? null,
-                ];
+                    $payload = [
+                        'name' => $d['name'],
+                        'email' => $d['email'],
+                        'role' => $role,
+                        'phone' => $d['phone'] ?? null,
+                        'specialization' => $d['specialization'] ?? null,
+                        'commission_rate' => isset($d['commission_rate']) ? (float) $d['commission_rate'] : 0.00,
+                        'status' => !empty($d['status']) ? strtolower($d['status']) : 'active',
+                        'bio' => $d['bio'] ?? null,
+                    ];
 
-                if (!$user) {
-                    $payload['password'] = Hash::make(!empty($d['password']) ? $d['password'] : 'password');
-                    $user = User::create($payload);
+                    if (!$user) {
+                        $payload['password'] = Hash::make(!empty($d['password']) ? $d['password'] : 'password');
+                        $user = User::create($payload);
 
-                    // Add default Monday to Saturday work schedule for therapist
-                    if ($role === 'therapist') {
-                        for ($day = 1; $day <= 6; $day++) {
-                            StaffSchedule::firstOrCreate(
-                                ['user_id' => $user->id, 'day_of_week' => $day],
-                                ['start_time' => '09:00:00', 'end_time' => '18:00:00', 'is_working' => true]
-                            );
+                        // Add default Monday to Saturday work schedule for therapist
+                        if ($role === 'therapist') {
+                            for ($day = 1; $day <= 6; $day++) {
+                                StaffSchedule::firstOrCreate(
+                                    ['user_id' => $user->id, 'day_of_week' => $day],
+                                    ['start_time' => '09:00:00', 'end_time' => '18:00:00', 'is_working' => true]
+                                );
+                            }
                         }
+                    } else {
+                        // For existing staff, do not overwrite password via bulk import to prevent account takeover
+                        $user->update($payload);
                     }
-                } else {
-                    if (!empty($d['password'])) {
-                        $payload['password'] = Hash::make($d['password']);
-                    }
-                    $user->update($payload);
-                }
+                });
 
                 $success++;
             } catch (\Throwable $e) {

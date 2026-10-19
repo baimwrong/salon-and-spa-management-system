@@ -4,129 +4,256 @@
 @section('page_title', 'Operations & Financial Dashboard')
 
 @section('content')
-<div class="row g-3 mb-4">
-    <!-- Today's Revenue -->
-    <div class="col-12 col-sm-6 col-xl-3">
-        <div class="aura-stat-card d-flex align-items-center justify-content-between">
-            <div>
-                <div class="text-muted small fw-semibold text-uppercase">Today's Revenue</div>
-                <h3 class="fw-bold my-1 text-dark">${{ number_format($todayRevenue, 2) }}</h3>
-                <div class="small text-success d-flex align-items-center gap-1">
+@if(auth()->user()->isTherapist())
+    <div class="row g-3 mb-4">
+        <!-- My Assigned Today -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="aura-stat-card d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">My Today's Bookings</div>
+                    <h3 class="fw-bold my-1 text-dark">{{ $myTodaySchedule ? $myTodaySchedule->count() : 0 }}</h3>
+                    <div class="small text-muted">
+                        <span class="text-primary fw-semibold">{{ $myTodaySchedule ? $myTodaySchedule->where('status', 'in_service')->count() : 0 }} In-Service</span> &bull;
+                        <span class="text-success fw-semibold">{{ $myTodaySchedule ? $myTodaySchedule->where('status', 'completed')->count() : 0 }} Done</span>
+                    </div>
+                </div>
+                <div class="aura-stat-icon aura-icon-blue">
                     <i class="bi bi-calendar-check"></i>
-                    <span>Month: ${{ number_format($monthRevenue, 2) }}</span>
                 </div>
             </div>
-            <div class="aura-stat-icon aura-icon-gold">
-                <i class="bi bi-currency-dollar"></i>
+        </div>
+
+        <!-- Pending Commission -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="aura-stat-card d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Pending Commission</div>
+                    <h3 class="fw-bold my-1 text-warning">${{ number_format($myPendingCommission, 2) }}</h3>
+                    <div class="small text-muted">Awaiting settlement</div>
+                </div>
+                <div class="aura-stat-icon aura-icon-gold">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Paid Commission -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="aura-stat-card d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Total Earned Payouts</div>
+                    <h3 class="fw-bold my-1 text-success">${{ number_format($myCommissionEarned, 2) }}</h3>
+                    <div class="small text-muted">Disbursed to date</div>
+                </div>
+                <div class="aura-stat-icon aura-icon-green">
+                    <i class="bi bi-wallet2"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Commission Rate -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="aura-stat-card d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">My Commission Rate</div>
+                    <h3 class="fw-bold my-1 text-dark">{{ auth()->user()->commission_rate }}%</h3>
+                    <div class="small text-muted">{{ auth()->user()->specialization ?? 'Specialist' }}</div>
+                </div>
+                <div class="aura-stat-icon aura-icon-rose">
+                    <i class="bi bi-percent"></i>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Appointments Today -->
-    <div class="col-12 col-sm-6 col-xl-3">
-        <div class="aura-stat-card d-flex align-items-center justify-content-between">
+    <!-- My Schedule Card for Therapist -->
+    <div class="card aura-card mb-4">
+        <div class="aura-card-header d-flex justify-content-between align-items-center">
             <div>
-                <div class="text-muted small fw-semibold text-uppercase">Today's Bookings</div>
-                <h3 class="fw-bold my-1 text-dark">{{ $todayAppointmentsCount }}</h3>
-                <div class="small text-muted">
-                    <span class="text-primary fw-semibold">{{ $todayInServiceCount }} In-Service</span> &bull;
-                    <span class="text-success fw-semibold">{{ $todayCompletedCount }} Done</span>
+                <h6 class="mb-0 fw-bold"><i class="bi bi-person-badge text-primary me-2"></i>My Treatment Appointments Today</h6>
+                <small class="text-muted">{{ date('l, F j, Y') }}</small>
+            </div>
+            <a href="{{ route('appointments.index') }}" class="btn btn-sm btn-light border">All Appointments &rarr;</a>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light small text-uppercase">
+                        <tr>
+                            <th>Time</th>
+                            <th>Guest Client</th>
+                            <th>Treatment Services</th>
+                            <th>Room / Station</th>
+                            <th>Status</th>
+                            <th class="text-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($myTodaySchedule as $apt)
+                            <tr>
+                                <td>
+                                    <div class="fw-bold text-dark small">{{ date('h:i A', strtotime($apt->start_time)) }}</div>
+                                    <div class="text-muted" style="font-size: 0.7rem;">{{ date('h:i A', strtotime($apt->end_time)) }}</div>
+                                </td>
+                                <td>
+                                    <span class="fw-semibold text-dark small">{{ $apt->customer->name }}</span>
+                                    <div class="text-muted" style="font-size: 0.75rem;">{{ $apt->customer->phone }}</div>
+                                </td>
+                                <td>
+                                    @foreach($apt->items as $item)
+                                        <span class="badge bg-light text-dark border me-1">{{ $item->service->name }}</span>
+                                    @endforeach
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary bg-opacity-10 text-dark border">{{ $apt->room?->name ?? 'Open Station' }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge {{ $apt->status_badge_class }} text-uppercase" style="font-size: 0.7rem;">
+                                        {{ str_replace('_', ' ', $apt->status) }}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <a href="{{ route('appointments.show', $apt) }}" class="btn btn-sm btn-light border">Details</a>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted small">
+                                    <i class="bi bi-calendar-check fs-3 d-block mb-2 text-success"></i>
+                                    You have no client appointments scheduled for today.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+@else
+    <div class="row g-3 mb-4">
+        <!-- Today's Revenue -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="aura-stat-card d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Today's Revenue</div>
+                    <h3 class="fw-bold my-1 text-dark">${{ number_format($todayRevenue, 2) }}</h3>
+                    <div class="small text-success d-flex align-items-center gap-1">
+                        <i class="bi bi-calendar-check"></i>
+                        <span>Month: ${{ number_format($monthRevenue, 2) }}</span>
+                    </div>
+                </div>
+                <div class="aura-stat-icon aura-icon-gold">
+                    <i class="bi bi-currency-dollar"></i>
                 </div>
             </div>
-            <div class="aura-stat-icon aura-icon-blue">
-                <i class="bi bi-calendar-event"></i>
-            </div>
         </div>
-    </div>
 
-    <!-- Active Customers -->
-    <div class="col-12 col-sm-6 col-xl-3">
-        <div class="aura-stat-card d-flex align-items-center justify-content-between">
-            <div>
-                <div class="text-muted small fw-semibold text-uppercase">Client Base</div>
-                <h3 class="fw-bold my-1 text-dark">{{ $totalCustomers }}</h3>
-                <div class="small text-success d-flex align-items-center gap-1">
-                    <i class="bi bi-person-plus"></i>
-                    <span>+{{ $newCustomersThisMonth }} new this month</span>
+        <!-- Appointments Today -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="aura-stat-card d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Today's Bookings</div>
+                    <h3 class="fw-bold my-1 text-dark">{{ $todayAppointmentsCount }}</h3>
+                    <div class="small text-muted">
+                        <span class="text-primary fw-semibold">{{ $todayInServiceCount }} In-Service</span> &bull;
+                        <span class="text-success fw-semibold">{{ $todayCompletedCount }} Done</span>
+                    </div>
+                </div>
+                <div class="aura-stat-icon aura-icon-blue">
+                    <i class="bi bi-calendar-event"></i>
                 </div>
             </div>
-            <div class="aura-stat-icon aura-icon-rose">
-                <i class="bi bi-people"></i>
-            </div>
         </div>
-    </div>
 
-    <!-- Low Stock Alert -->
-    <div class="col-12 col-sm-6 col-xl-3">
-        <div class="aura-stat-card d-flex align-items-center justify-content-between">
-            <div>
-                <div class="text-muted small fw-semibold text-uppercase">Inventory Status</div>
-                <h3 class="fw-bold my-1 {{ $lowStockCount > 0 ? 'text-danger' : 'text-success' }}">
-                    {{ $lowStockCount }}
-                </h3>
-                <div class="small text-muted">
-                    @if($lowStockCount > 0)
-                        <span class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle"></i> Low stock items</span>
-                    @else
-                        <span class="text-success"><i class="bi bi-check2-circle"></i> Stock levels healthy</span>
-                    @endif
+        <!-- Active Customers -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="aura-stat-card d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Client Base</div>
+                    <h3 class="fw-bold my-1 text-dark">{{ $totalCustomers }}</h3>
+                    <div class="small text-success d-flex align-items-center gap-1">
+                        <i class="bi bi-person-plus"></i>
+                        <span>+{{ $newCustomersThisMonth }} new this month</span>
+                    </div>
+                </div>
+                <div class="aura-stat-icon aura-icon-rose">
+                    <i class="bi bi-people"></i>
                 </div>
             </div>
-            <div class="aura-stat-icon {{ $lowStockCount > 0 ? 'bg-danger bg-opacity-10 text-danger' : 'aura-icon-green' }}">
-                <i class="bi bi-box-seam"></i>
+        </div>
+
+        <!-- Low Stock Alert -->
+        <div class="col-12 col-sm-6 col-xl-3">
+            <div class="aura-stat-card d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Inventory Status</div>
+                    <h3 class="fw-bold my-1 {{ $lowStockCount > 0 ? 'text-danger' : 'text-success' }}">
+                        {{ $lowStockCount }}
+                    </h3>
+                    <div class="small text-muted">
+                        @if($lowStockCount > 0)
+                            <span class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle"></i> Low stock items</span>
+                        @else
+                            <span class="text-success"><i class="bi bi-check2-circle"></i> Stock levels healthy</span>
+                        @endif
+                    </div>
+                </div>
+                <div class="aura-stat-icon {{ $lowStockCount > 0 ? 'bg-danger bg-opacity-10 text-danger' : 'aura-icon-green' }}">
+                    <i class="bi bi-box-seam"></i>
+                </div>
             </div>
         </div>
     </div>
-</div>
 
-<!-- Chart & Performance Row -->
-<div class="row g-3 mb-4">
-    <!-- Revenue Chart -->
-    <div class="col-12 col-lg-8">
-        <div class="card aura-card h-100">
-            <div class="aura-card-header d-flex justify-content-between align-items-center">
-                <h6 class="mb-0 fw-bold"><i class="bi bi-graph-up text-warning me-2"></i>7-Day Revenue Trajectory</h6>
-                <span class="badge bg-light text-dark border">POS Real-time</span>
-            </div>
-            <div class="card-body">
-                <canvas id="revenueTrendChart" style="max-height: 280px;"></canvas>
+    <!-- Chart & Performance Row -->
+    <div class="row g-3 mb-4">
+        <!-- Revenue Chart -->
+        <div class="col-12 col-lg-8">
+            <div class="card aura-card h-100">
+                <div class="aura-card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-graph-up text-warning me-2"></i>7-Day Revenue Trajectory</h6>
+                    <span class="badge bg-light text-dark border">POS Real-time</span>
+                </div>
+                <div class="card-body">
+                    <canvas id="revenueTrendChart" style="max-height: 280px;"></canvas>
+                </div>
             </div>
         </div>
-    </div>
 
-    <!-- Top Stylists / Therapists -->
-    <div class="col-12 col-lg-4">
-        <div class="card aura-card h-100">
-            <div class="aura-card-header d-flex justify-content-between align-items-center">
-                <h6 class="mb-0 fw-bold"><i class="bi bi-award text-warning me-2"></i>Top Therapists</h6>
-                <a href="{{ route('commissions.index') }}" class="small text-decoration-none">Ledger &rarr;</a>
-            </div>
-            <div class="card-body p-0">
-                <div class="list-group list-group-flush">
-                    @forelse($topTherapists as $therapist)
-                        <div class="list-group-item d-flex align-items-center justify-content-between py-3">
-                            <div class="d-flex align-items-center gap-2">
-                                <div class="rounded-circle bg-dark text-warning d-flex align-items-center justify-content-center fw-bold" style="width: 38px; height: 38px; font-size: 0.9rem;">
-                                    {{ substr($therapist->name, 0, 1) }}
+        <!-- Top Stylists / Therapists -->
+        <div class="col-12 col-lg-4">
+            <div class="card aura-card h-100">
+                <div class="aura-card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-award text-warning me-2"></i>Top Therapists</h6>
+                    <a href="{{ route('commissions.index') }}" class="small text-decoration-none">Ledger &rarr;</a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        @forelse($topTherapists as $therapist)
+                            <div class="list-group-item d-flex align-items-center justify-content-between py-3">
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="rounded-circle bg-dark text-warning d-flex align-items-center justify-content-center fw-bold" style="width: 38px; height: 38px; font-size: 0.9rem;">
+                                        {{ substr($therapist->name, 0, 1) }}
+                                    </div>
+                                    <div>
+                                        <div class="fw-semibold small text-dark">{{ $therapist->name }}</div>
+                                        <div class="text-muted" style="font-size: 0.75rem;">{{ $therapist->specialization ?? 'Therapist' }}</div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <div class="fw-semibold small text-dark">{{ $therapist->name }}</div>
-                                    <div class="text-muted" style="font-size: 0.75rem;">{{ $therapist->specialization ?? 'Therapist' }}</div>
+                                <div class="text-end">
+                                    <div class="fw-bold text-success small">${{ number_format($therapist->earned_commissions ?? 0, 2) }}</div>
+                                    <div class="text-muted" style="font-size: 0.72rem;">{{ $therapist->completed_appointments_count ?? 0 }} visits completed</div>
                                 </div>
                             </div>
-                            <div class="text-end">
-                                <div class="fw-bold text-success small">${{ number_format($therapist->earned_commissions, 2) }}</div>
-                                <div class="text-muted" style="font-size: 0.72rem;">{{ $therapist->completed_appointments_count }} visits completed</div>
-                            </div>
-                        </div>
-                    @empty
-                        <div class="p-4 text-center text-muted small">No therapist data recorded yet.</div>
-                    @endforelse
+                        @empty
+                            <div class="p-4 text-center text-muted small">No therapist data recorded yet.</div>
+                        @endforelse
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
+@endif
 
 <!-- Appointments Today Table & Low Stock Alerts -->
 <div class="row g-3">

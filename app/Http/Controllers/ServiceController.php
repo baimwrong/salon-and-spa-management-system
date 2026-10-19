@@ -20,11 +20,11 @@ class ServiceController extends Controller
         }
 
         if ($request->filled('search')) {
-            $search = $request->input('search');
+            $search = strtolower($request->input('search'));
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'ilike', "%{$search}%")
-                    ->orWhere('code', 'ilike', "%{$search}%")
-                    ->orWhere('description', 'ilike', "%{$search}%");
+                $q->whereRaw('LOWER(name) LIKE ?', ["%{$search}%"])
+                    ->orWhereRaw('LOWER(code) LIKE ?', ["%{$search}%"])
+                    ->orWhereRaw('LOWER(description) LIKE ?', ["%{$search}%"]);
             });
         }
 
@@ -99,6 +99,10 @@ class ServiceController extends Controller
 
     public function destroy(Service $service)
     {
+        if ($service->appointmentItems()->exists() || $service->invoiceItems()->exists()) {
+            return back()->with('error', "Cannot delete service '{$service->name}' because it has historical appointments or invoices. You can deactivate it instead.");
+        }
+
         $service->delete();
         return redirect()->route('services.index')->with('success', 'Service deleted.');
     }

@@ -48,10 +48,9 @@ class PosController extends Controller
             'items' => ['required', 'array', 'min:1'],
             'items.*.type' => ['required', 'string', 'in:service,product'],
             'items.*.id' => ['required', 'integer'],
-            'items.*.name' => ['required', 'string'],
             'items.*.therapist_id' => ['nullable', 'exists:users,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
-            'items.*.price' => ['required', 'numeric', 'min:0'],
+            'items.*.price' => ['nullable', 'numeric', 'min:0'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
             'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'tip_amount' => ['nullable', 'numeric', 'min:0'],
@@ -60,27 +59,74 @@ class PosController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        $subtotal = 0;
-        foreach ($validated['items'] as $item) {
-            $subtotal += ($item['price'] * $item['quantity']);
-        }
-
-        $discount = (float) ($validated['discount_amount'] ?? 0);
-        $taxRate = (float) ($validated['tax_rate'] ?? 10.0);
-        $taxAmount = round(($subtotal - $discount) * ($taxRate / 100), 2);
-        $tip = (float) ($validated['tip_amount'] ?? 0);
-        $total = round(($subtotal - $discount) + $taxAmount + $tip, 2);
-        $paid = (float) $validated['paid_amount'];
-        $change = max(0, round($paid - $total, 2));
-
-        $invoiceNumber = 'INV-' . Carbon::today()->format('Ymd') . '-' . strtoupper(Str::random(4));
-
         DB::beginTransaction();
         try {
+            // Authoritative server-side price resolution & inventory verification
+            $resolvedItems = [];
+            $subtotal = 0;
+
+            foreach ($validated['items'] as $item) {
+                if ($item['type'] === 'service') {
+                    $service = Service::findOrFail($item['id']);
+                    $unitPrice = (float) $service->price;
+                    $itemName = $service->name;
+                    $productModel = null;
+                } else {
+                    $product = Product::where('id', $item['id'])->lockForUpdate()->firstOrFail();
+                    if ($product->stock_quantity < $item['quantity']) {
+                        throw new \RuntimeException("Insufficient stock for '{$product->name}'. Available: {$product->stock_quantity}, requested: {$item['quantity']}.");
+                    }
+                    $unitPrice = (float) $product->retail_price;
+                    $itemName = $product->name;
+                    $productModel = $product;
+                }
+
+                $itemSubtotal = round($unitPrice * $item['quantity'], 2);
+                $subtotal += $itemSubtotal;
+
+                $resolvedItems[] = [
+                    'type' => $item['type'],
+                    'id' => $item['id'],
+                    'name' => $itemName,
+                    'quantity' => (int) $item['quantity'],
+                    'unit_price' => $unitPrice,
+                    'subtotal' => $itemSubtotal,
+                    'therapist_id' => $item['therapist_id'] ?? null,
+                    'product_model' => $productModel,
+                ];
+            }
+
+            $discount = (float) ($validated['discount_amount'] ?? 0);
+            $discount = min($discount, $subtotal); // Discount cannot exceed subtotal
+
+            $taxRate = (float) ($validated['tax_rate'] ?? 10.0);
+            $taxableAmount = max(0, $subtotal - $discount);
+            $taxAmount = round($taxableAmount * ($taxRate / 100), 2);
+            $tip = (float) ($validated['tip_amount'] ?? 0);
+            $total = round($taxableAmount + $taxAmount + $tip, 2);
+            $paid = (float) $validated['paid_amount'];
+            $change = max(0, round($paid - $total, 2));
+
+            // Loyalty Points validation & deduction if paying with points
+            $customer = !empty($validated['customer_id']) ? Customer::lockForUpdate()->find($validated['customer_id']) : null;
+            if ($validated['payment_method'] === 'loyalty_points') {
+                if (!$customer) {
+                    throw new \RuntimeException("A registered customer profile is required to pay with Loyalty Points.");
+                }
+                // Exchange policy: 10 points = $1.00 (1 point = $0.10)
+                $pointsNeeded = (int) ceil($total * 10);
+                if ($customer->loyalty_points < $pointsNeeded) {
+                    throw new \RuntimeException("Insufficient loyalty points. This total requires {$pointsNeeded} points, but client only has {$customer->loyalty_points} points.");
+                }
+                $customer->decrement('loyalty_points', $pointsNeeded);
+            }
+
+            $invoiceNumber = 'INV-' . Carbon::today()->format('Ymd') . '-' . strtoupper(Str::random(4));
+
             $invoice = Invoice::create([
                 'invoice_number' => $invoiceNumber,
                 'appointment_id' => $validated['appointment_id'] ?? null,
-                'customer_id' => $validated['customer_id'] ?? null,
+                'customer_id' => $customer?->id,
                 'cashier_id' => Auth::id(),
                 'subtotal' => $subtotal,
                 'discount_amount' => $discount,
@@ -95,11 +141,10 @@ class PosController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
-            foreach ($validated['items'] as $item) {
-                $itemSubtotal = $item['price'] * $item['quantity'];
+            foreach ($resolvedItems as $item) {
                 $therapist = !empty($item['therapist_id']) ? User::find($item['therapist_id']) : null;
                 $commissionRate = $therapist ? (float) $therapist->commission_rate : 0.00;
-                $commissionAmount = round($itemSubtotal * ($commissionRate / 100), 2);
+                $commissionAmount = round($item['subtotal'] * ($commissionRate / 100), 2);
 
                 $invoiceItem = InvoiceItem::create([
                     'invoice_id' => $invoice->id,
@@ -109,8 +154,8 @@ class PosController extends Controller
                     'item_name' => $item['name'],
                     'therapist_id' => $therapist ? $therapist->id : null,
                     'quantity' => $item['quantity'],
-                    'unit_price' => $item['price'],
-                    'subtotal' => $itemSubtotal,
+                    'unit_price' => $item['unit_price'],
+                    'subtotal' => $item['subtotal'],
                     'commission_rate' => $commissionRate,
                     'commission_amount' => $commissionAmount,
                 ]);
@@ -126,21 +171,19 @@ class PosController extends Controller
                     ]);
                 }
 
-                // If product, reduce stock and record movement
-                if ($item['type'] === 'product') {
-                    $product = Product::find($item['id']);
-                    if ($product) {
-                        $product->decrement('stock_quantity', $item['quantity']);
-                        StockMovement::create([
-                            'product_id' => $product->id,
-                            'user_id' => Auth::id(),
-                            'type' => 'sale',
-                            'quantity' => -$item['quantity'],
-                            'unit_cost' => $product->cost_price,
-                            'reference_number' => $invoice->invoice_number,
-                            'notes' => "POS Sale checkout",
-                        ]);
-                    }
+                // If product, decrement stock and record stock movement
+                if ($item['type'] === 'product' && $item['product_model']) {
+                    $product = $item['product_model'];
+                    $product->decrement('stock_quantity', $item['quantity']);
+                    StockMovement::create([
+                        'product_id' => $product->id,
+                        'user_id' => Auth::id(),
+                        'type' => 'sale',
+                        'quantity' => -$item['quantity'],
+                        'unit_cost' => $product->cost_price,
+                        'reference_number' => $invoice->invoice_number,
+                        'notes' => "POS Sale checkout",
+                    ]);
                 }
             }
 
@@ -149,11 +192,11 @@ class PosController extends Controller
                 Appointment::where('id', $validated['appointment_id'])->update(['status' => 'completed']);
             }
 
-            // Award loyalty points to customer (1 point per $10 spent)
-            if (!empty($validated['customer_id'])) {
+            // Award loyalty points to customer (1 point per $10 spent) only if not paying with points
+            if ($customer && $validated['payment_method'] !== 'loyalty_points') {
                 $pointsAwarded = (int) floor($total / 10);
                 if ($pointsAwarded > 0) {
-                    Customer::where('id', $validated['customer_id'])->increment('loyalty_points', $pointsAwarded);
+                    $customer->increment('loyalty_points', $pointsAwarded);
                 }
             }
 
@@ -175,11 +218,12 @@ class PosController extends Controller
         $query = Invoice::with(['customer', 'cashier']);
 
         if ($request->filled('search')) {
-            $search = $request->input('search');
+            $search = strtolower(trim($request->input('search')));
             $query->where(function ($q) use ($search) {
-                $q->where('invoice_number', 'ilike', "%{$search}%")
+                $q->whereRaw('LOWER(invoice_number) LIKE ?', ["%{$search}%"])
                     ->orWhereHas('customer', function ($cq) use ($search) {
-                        $cq->where('name', 'ilike', "%{$search}%")->orWhere('phone', 'like', "%{$search}%");
+                        $cq->whereRaw('LOWER(name) LIKE ?', ["%{$search}%"])
+                            ->orWhere('phone', 'like', "%{$search}%");
                     });
             });
         }

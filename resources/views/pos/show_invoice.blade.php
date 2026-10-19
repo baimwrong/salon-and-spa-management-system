@@ -16,8 +16,11 @@
                 <a href="{{ route('pos.terminal') }}" class="btn btn-sm btn-outline-primary">
                     <i class="bi bi-cart-plus me-1"></i>New Sale
                 </a>
+                <button type="button" class="btn btn-sm btn-outline-dark" onclick="printThermal()">
+                    <i class="bi bi-receipt me-1"></i>Thermal Receipt (80mm)
+                </button>
                 <button type="button" class="btn btn-sm btn-aura-gold" onclick="window.print()">
-                    <i class="bi bi-printer me-1"></i>Print Receipt
+                    <i class="bi bi-printer me-1"></i>Print Invoice
                 </button>
             </div>
         </div>
@@ -166,3 +169,64 @@
     </div>
 </div>
 @endsection
+
+@push('styles')
+<style>
+@media print {
+    body {
+        background: #fff !important;
+        color: #000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    .aura-sidebar, .aura-topbar, .no-print, nav, .btn, header {
+        display: none !important;
+    }
+    .aura-main-content {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }
+    .card {
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+    }
+    #printableReceipt {
+        max-width: 100% !important;
+        width: 100% !important;
+        margin: 0 auto !important;
+    }
+    body.print-thermal #printableReceipt {
+        max-width: 78mm !important;
+        width: 78mm !important;
+        font-size: 11px !important;
+        padding: 4px !important;
+    }
+    body.print-thermal .table th,
+    body.print-thermal .table td {
+        padding: 4px 2px !important;
+        font-size: 11px !important;
+    }
+    body.print-thermal h4 {
+        font-size: 16px !important;
+    }
+    body.print-thermal h5 {
+        font-size: 14px !important;
+    }
+}
+</style>
+@endpush
+
+@push('scripts')
+<script>
+function printThermal() {
+    document.body.classList.add('print-thermal');
+    window.print();
+    setTimeout(() => {
+        document.body.classList.remove('print-thermal');
+    }, 1500);
+}
+</script>
+@endpush
+

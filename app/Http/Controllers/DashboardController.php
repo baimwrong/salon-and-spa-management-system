@@ -56,39 +56,45 @@ class DashboardController extends Controller
             ->take(8)
             ->get();
 
-        // 7-Day Revenue Trend for Chart.js
+        // 7-Day Revenue Trend for Chart.js (Single grouped query)
+        $startDate = Carbon::today()->subDays(6)->startOfDay();
+        $dailyRevenues = Invoice::where('payment_status', 'paid')
+            ->where('created_at', '>=', $startDate)
+            ->selectRaw('DATE(created_at) as invoice_date, SUM(total_amount) as total')
+            ->groupByRaw('DATE(created_at)')
+            ->pluck('total', 'invoice_date');
+
         $chartLabels = [];
         $chartRevenues = [];
         for ($i = 6; $i >= 0; $i--) {
             $date = Carbon::today()->subDays($i);
             $chartLabels[] = $date->format('D, M d');
-            $dailyTotal = Invoice::where('payment_status', 'paid')
-                ->whereDate('created_at', $date)
-                ->sum('total_amount');
-            $chartRevenues[] = (float) $dailyTotal;
+            $dateKey = $date->toDateString();
+            $chartRevenues[] = (float) ($dailyRevenues[$dateKey] ?? 0);
         }
 
-        // Top Performing Therapists
+        // Top Performing Therapists (Single database query with eager aggregates)
         $topTherapists = User::where('role', 'therapist')
             ->withCount(['therapistAppointments as completed_appointments_count' => function ($q) {
                 $q->where('status', 'completed');
             }])
-            ->get()
-            ->map(function ($therapist) {
-                $therapist->earned_commissions = InvoiceItem::where('therapist_id', $therapist->id)->sum('commission_amount');
-                return $therapist;
-            })
-            ->sortByDesc('earned_commissions')
-            ->take(4);
+            ->withSum('invoiceItems as earned_commissions', 'commission_amount')
+            ->orderByDesc('earned_commissions')
+            ->take(4)
+            ->get();
 
         // Therapist-specific view data if logged in as therapist
         $myTodaySchedule = null;
+        $myCommissionEarned = 0.00;
+        $myPendingCommission = 0.00;
         if ($user->isTherapist()) {
             $myTodaySchedule = Appointment::with(['customer', 'room', 'items.service'])
                 ->where('therapist_id', $user->id)
                 ->whereDate('appointment_date', $today)
                 ->orderBy('start_time', 'asc')
                 ->get();
+            $myCommissionEarned = (float) $user->commissionPayouts()->where('status', 'paid')->sum('amount');
+            $myPendingCommission = (float) $user->commissionPayouts()->where('status', 'pending')->sum('amount');
         }
 
         return view('dashboard.index', compact(
@@ -106,7 +112,9 @@ class DashboardController extends Controller
             'chartLabels',
             'chartRevenues',
             'topTherapists',
-            'myTodaySchedule'
+            'myTodaySchedule',
+            'myCommissionEarned',
+            'myPendingCommission'
         ));
     }
 }
