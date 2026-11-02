@@ -16,6 +16,11 @@
                 <a href="{{ route('pos.terminal') }}" class="btn btn-sm btn-outline-primary">
                     <i class="bi bi-cart-plus me-1"></i>New Sale
                 </a>
+                @if(auth()->user()->isManager() && in_array($invoice->payment_status, ['paid', 'partial']))
+                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#refundModal">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>Refund Invoice
+                    </button>
+                @endif
                 <button type="button" class="btn btn-sm btn-outline-dark" onclick="printThermal()">
                     <i class="bi bi-receipt me-1"></i>Thermal Receipt (80mm)
                 </button>
@@ -32,11 +37,14 @@
                 <div>
                     <div class="d-flex align-items-center gap-2 mb-1">
                         <i class="bi bi-flower1 text-warning fs-3"></i>
-                        <h4 class="fw-bold mb-0 text-dark">SALON & SPA</h4>
+                        <h4 class="fw-bold mb-0 text-dark">{{ config('salon.name') }}</h4>
                     </div>
-                    <div class="small text-muted">Wellness & Beauty Center</div>
-                    <div class="small text-muted">742 Evergreen Terrace, Beverly Hills, CA</div>
-                    <div class="small text-muted">Tel: +1 (555) 019-2831 &bull; info@salonspa.local</div>
+                    <div class="small text-muted">{{ config('salon.tagline') }}</div>
+                    <div class="small text-muted">{{ config('salon.address') }}</div>
+                    <div class="small text-muted">Tel: {{ config('salon.phone') }} &bull; {{ config('salon.email') }}</div>
+                    @if(config('salon.tax_id'))
+                        <div class="small text-muted">Tax ID / VAT: {{ config('salon.tax_id') }}</div>
+                    @endif
                 </div>
 
                 <div class="text-end">
@@ -152,6 +160,23 @@
                             <span class="fw-bold">${{ number_format($invoice->change_amount, 2) }}</span>
                         </div>
                     @endif
+
+                    @if($invoice->payments->isNotEmpty())
+                        <div class="border-top pt-2 mt-2">
+                            <span class="text-muted small fw-semibold d-block mb-1 text-uppercase" style="font-size: 0.7rem;">Payment Breakdown:</span>
+                            @foreach($invoice->payments as $payment)
+                                <div class="d-flex justify-content-between py-1 small">
+                                    <span>
+                                        <span class="badge bg-light text-dark border me-1 text-uppercase">{{ str_replace('_', ' ', $payment->payment_method) }}</span>
+                                        @if($payment->reference_number)
+                                            <span class="text-muted" style="font-size: 0.72rem;">#{{ $payment->reference_number }}</span>
+                                        @endif
+                                    </span>
+                                    <span class="fw-bold text-dark">${{ number_format($payment->amount, 2) }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
             </div>
 
@@ -162,12 +187,39 @@
             @endif
 
             <div class="text-center pt-3 border-top text-muted small">
-                <div class="fw-semibold text-dark">Thank you for visiting our Salon & Spa!</div>
-                <div>We look forward to welcoming you back soon.</div>
+                <div class="fw-semibold text-dark">{{ config('salon.receipt_footer') }}</div>
             </div>
         </div>
     </div>
 </div>
+
+@if(auth()->user()->isManager() && in_array($invoice->payment_status, ['paid', 'partial']))
+<!-- Refund Confirmation Modal -->
+<div class="modal fade" id="refundModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="POST" action="{{ route('pos.invoices.refund', $invoice) }}" class="modal-content">
+            @csrf
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-arrow-counterclockwise me-1"></i>Process Refund: {{ $invoice->invoice_number }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-3">
+                    Refunding this invoice will mark the status as <strong>REFUNDED</strong>, automatically restock any retail merchandise sold, clawback pending specialist commissions, and reconcile loyalty points.
+                </p>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Refund Reason <span class="text-danger">*</span></label>
+                    <input type="text" name="refund_reason" class="form-control form-control-sm" required placeholder="e.g. Client dissatisfaction, wrong treatment entered, returned product">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-sm btn-danger fw-bold"><i class="bi bi-check2-circle me-1"></i>Confirm Refund</button>
+            </div>
+        </form>
+    </div>
+</div>
+@endif
 @endsection
 
 @push('styles')

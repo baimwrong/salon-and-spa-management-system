@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Appointment;
 use App\Models\AppointmentItem;
 use App\Models\Customer;
+use App\Models\Product;
 use App\Models\Service;
 use App\Models\SpaRoom;
+use App\Models\StockMovement;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -18,7 +20,9 @@ class AppointmentController extends Controller
     public function index(Request $request)
     {
         $selectedDate = $request->input('date', Carbon::today()->format('Y-m-d'));
-        $query = Appointment::with(['customer', 'therapist', 'room', 'items.service']);
+        $viewMode = $request->input('view', 'table'); // table or timeline
+
+        $query = Appointment::with(['customer', 'therapist', 'room', 'items.service', 'items.therapist']);
 
         if ($request->filled('date')) {
             $query->whereDate('appointment_date', $selectedDate);
@@ -36,12 +40,17 @@ class AppointmentController extends Controller
             $query->where('room_id', $request->input('room_id'));
         }
 
+        $therapists = User::where('role', 'therapist')->where('status', 'active')->orderBy('name')->get();
+        $rooms = SpaRoom::where('is_active', true)->orderBy('name')->get();
+
+        if ($viewMode === 'timeline') {
+            $appointments = $query->orderBy('start_time', 'asc')->get();
+            return view('appointments.index', compact('appointments', 'therapists', 'rooms', 'selectedDate', 'viewMode'));
+        }
+
         $appointments = $query->orderBy('start_time', 'asc')->paginate(20)->withQueryString();
 
-        $therapists = User::where('role', 'therapist')->where('status', 'active')->get();
-        $rooms = SpaRoom::where('is_active', true)->get();
-
-        return view('appointments.index', compact('appointments', 'therapists', 'rooms', 'selectedDate'));
+        return view('appointments.index', compact('appointments', 'therapists', 'rooms', 'selectedDate', 'viewMode'));
     }
 
     public function create(Request $request)
@@ -67,10 +76,19 @@ class AppointmentController extends Controller
             'booking_type' => ['required', 'string', 'in:walk_in,phone,online'],
             'service_ids' => ['required', 'array', 'min:1'],
             'service_ids.*' => ['exists:services,id'],
+            'item_therapist_ids' => ['nullable', 'array'],
+            'item_therapist_ids.*' => ['nullable', 'exists:users,id'],
             'notes' => ['nullable', 'string'],
         ]);
 
         $services = Service::whereIn('id', $validated['service_ids'])->get();
+
+        // Enforce room requirement validation
+        $requiresRoom = $services->contains('requires_room', true);
+        if ($requiresRoom && empty($validated['room_id'])) {
+            return back()->withInput()->with('error', 'One or more of the selected treatments require a dedicated spa room/suite. Please select a room.');
+        }
+
         $totalDurationMinutes = $services->sum(fn($s) => $s->duration_minutes + $s->buffer_time_minutes);
         $totalPrice = $services->sum('price');
 
@@ -89,11 +107,23 @@ class AppointmentController extends Controller
             return back()->withInput()->with('error', $e->getMessage());
         }
 
-        $datePrefix = str_replace('-', '', $validated['appointment_date']);
-        $appointmentNumber = 'APT-' . $datePrefix . '-' . strtoupper(Str::random(4));
-
         DB::beginTransaction();
         try {
+            // Sequential & Compliant Appointment Number
+            $datePrefix = str_replace('-', '', $validated['appointment_date']);
+            $prefix = "APT-{$datePrefix}-";
+            $lastApt = Appointment::where('appointment_number', 'LIKE', "{$prefix}%")
+                ->orderByDesc('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($lastApt && preg_match('/-(\d+)$/', $lastApt->appointment_number, $matches)) {
+                $nextSeq = intval($matches[1]) + 1;
+            } else {
+                $nextSeq = 1;
+            }
+            $appointmentNumber = $prefix . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
+
             $appointment = Appointment::create([
                 'appointment_number' => $appointmentNumber,
                 'customer_id' => $validated['customer_id'],
@@ -112,10 +142,11 @@ class AppointmentController extends Controller
             ]);
 
             foreach ($services as $service) {
+                $itemTherapistId = $validated['item_therapist_ids'][$service->id] ?? $validated['therapist_id'] ?? null;
                 AppointmentItem::create([
                     'appointment_id' => $appointment->id,
                     'service_id' => $service->id,
-                    'therapist_id' => $validated['therapist_id'] ?? null,
+                    'therapist_id' => $itemTherapistId,
                     'price' => $service->price,
                     'duration_minutes' => $service->duration_minutes,
                 ]);
@@ -133,7 +164,7 @@ class AppointmentController extends Controller
 
     public function show(Appointment $appointment)
     {
-        $appointment->load(['customer', 'therapist', 'room', 'items.service', 'invoice']);
+        $appointment->load(['customer', 'therapist', 'room', 'items.service', 'items.therapist', 'invoice']);
         return view('appointments.show', compact('appointment'));
     }
 
@@ -150,8 +181,9 @@ class AppointmentController extends Controller
         $rooms = SpaRoom::where('is_active', true)->orderBy('name')->get();
         $services = Service::where('is_active', true)->with('category')->orderBy('name')->get();
         $selectedServiceIds = $appointment->items->pluck('service_id')->toArray();
+        $itemTherapists = $appointment->items->pluck('therapist_id', 'service_id')->toArray();
 
-        return view('appointments.edit', compact('appointment', 'customers', 'therapists', 'rooms', 'services', 'selectedServiceIds'));
+        return view('appointments.edit', compact('appointment', 'customers', 'therapists', 'rooms', 'services', 'selectedServiceIds', 'itemTherapists'));
     }
 
     public function update(Request $request, Appointment $appointment)
@@ -169,10 +201,18 @@ class AppointmentController extends Controller
             'booking_type' => ['required', 'string', 'in:walk_in,phone,online'],
             'service_ids' => ['required', 'array', 'min:1'],
             'service_ids.*' => ['exists:services,id'],
+            'item_therapist_ids' => ['nullable', 'array'],
+            'item_therapist_ids.*' => ['nullable', 'exists:users,id'],
             'notes' => ['nullable', 'string'],
         ]);
 
         $services = Service::whereIn('id', $validated['service_ids'])->get();
+
+        $requiresRoom = $services->contains('requires_room', true);
+        if ($requiresRoom && empty($validated['room_id'])) {
+            return back()->withInput()->with('error', 'One or more of the selected treatments require a dedicated spa room/suite. Please select a room.');
+        }
+
         $totalDurationMinutes = $services->sum(fn($s) => $s->duration_minutes + $s->buffer_time_minutes);
         $totalPrice = $services->sum('price');
 
@@ -211,10 +251,11 @@ class AppointmentController extends Controller
             // Recreate appointment items
             $appointment->items()->delete();
             foreach ($services as $service) {
+                $itemTherapistId = $validated['item_therapist_ids'][$service->id] ?? $validated['therapist_id'] ?? null;
                 AppointmentItem::create([
                     'appointment_id' => $appointment->id,
                     'service_id' => $service->id,
-                    'therapist_id' => $validated['therapist_id'] ?? null,
+                    'therapist_id' => $itemTherapistId,
                     'price' => $service->price,
                     'duration_minutes' => $service->duration_minutes,
                 ]);
@@ -237,16 +278,54 @@ class AppointmentController extends Controller
             'cancellation_reason' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $appointment->update([
-            'status' => $validated['status'],
-            'cancellation_reason' => $validated['status'] === 'cancelled' ? ($validated['cancellation_reason'] ?? 'Not specified') : null,
-        ]);
+        DB::beginTransaction();
+        try {
+            $oldStatus = $appointment->status;
+            $newStatus = $validated['status'];
 
-        return back()->with('success', "Appointment status updated to [{$validated['status']}].");
+            $appointment->update([
+                'status' => $newStatus,
+                'cancellation_reason' => $newStatus === 'cancelled' ? ($validated['cancellation_reason'] ?? 'Not specified') : null,
+            ]);
+
+            // Auto-deduct backbar consumables if marked completed and wasn't previously completed
+            if ($newStatus === 'completed' && $oldStatus !== 'completed') {
+                $appointment->load('items.service.consumables.product');
+                foreach ($appointment->items as $item) {
+                    if ($item->service && $item->service->consumables->isNotEmpty()) {
+                        foreach ($item->service->consumables as $consumable) {
+                            $prod = Product::where('id', $consumable->product_id)->lockForUpdate()->first();
+                            if ($prod) {
+                                $prod->decrement('stock_quantity', $consumable->quantity_used);
+                                StockMovement::create([
+                                    'product_id' => $prod->id,
+                                    'user_id' => auth()->id(),
+                                    'type' => 'service_usage',
+                                    'quantity' => -$consumable->quantity_used,
+                                    'unit_cost' => $prod->cost_price,
+                                    'reference_number' => $appointment->appointment_number,
+                                    'notes' => "Auto backbar usage for completed appointment {$appointment->appointment_number}",
+                                ]);
+                            }
+                        }
+                    }
+                }
+            }
+
+            DB::commit();
+            return back()->with('success', "Appointment status updated to [{$newStatus}].");
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return back()->with('error', 'Failed to update status: ' . $e->getMessage());
+        }
     }
 
     public function destroy(Appointment $appointment)
     {
+        if (!auth()->user()->isManager()) {
+            return back()->with('error', 'Only managers and administrators can delete appointments.');
+        }
+
         if ($appointment->invoice) {
             return back()->with('error', 'Cannot delete an appointment that already has a paid or generated invoice.');
         }

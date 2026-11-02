@@ -79,6 +79,7 @@
             </div>
         </div>
 
+        @if(Route::has('quick.login'))
         <!-- Quick 1-Click Demo Accounts -->
         <div class="card border-0 shadow-sm rounded-4">
             <div class="card-body p-3">
@@ -109,6 +110,7 @@
                 </div>
             </div>
         </div>
+        @endif
 
         <div class="text-center mt-4 text-muted small">
             &copy; {{ date('Y') }} Salon & Spa Management System. Offline-Ready Enterprise System.

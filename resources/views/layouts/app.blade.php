@@ -38,6 +38,7 @@
                     <i class="bi bi-calendar-check"></i>
                     <span>Appointments</span>
                 </a>
+                @if(auth()->user()->isReceptionist())
                 <a href="{{ route('pos.terminal') }}" class="aura-nav-link {{ request()->routeIs('pos.terminal') ? 'active' : '' }}">
                     <i class="bi bi-cash-coin"></i>
                     <span>Front Desk POS</span>
@@ -46,6 +47,7 @@
                     <i class="bi bi-receipt"></i>
                     <span>Invoices & Billing</span>
                 </a>
+                @endif
                 <a href="{{ route('customers.index') }}" class="aura-nav-link {{ request()->routeIs('customers.*') ? 'active' : '' }}">
                     <i class="bi bi-people"></i>
                     <span>Customer CRM</span>
@@ -113,6 +115,7 @@
 
                 <div class="d-flex align-items-center gap-3">
                     <!-- Quick Demo Role Switcher -->
+                    @if(Route::has('quick.login'))
                     <div class="dropdown">
                         <button class="btn btn-sm btn-outline-secondary dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-person-switch"></i>
@@ -126,12 +129,15 @@
                             <li><a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('quick.login', 'therapist') }}"><span class="badge bg-warning text-dark">Therapist</span> Elena Vance</a></li>
                         </ul>
                     </div>
+                    @endif
 
                     <!-- Quick POS action -->
+                    @if(auth()->user()->isReceptionist())
                     <a href="{{ route('pos.terminal') }}" class="btn btn-sm btn-aura-gold d-flex align-items-center gap-1 shadow-sm">
                         <i class="bi bi-plus-circle"></i>
                         <span>New Sale</span>
                     </a>
+                    @endif
 
                     <!-- User Avatar -->
                     <div class="dropdown">

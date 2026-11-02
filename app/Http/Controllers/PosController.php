@@ -7,6 +7,7 @@ use App\Models\CommissionPayout;
 use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\StockMovement;
@@ -15,7 +16,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class PosController extends Controller
 {
@@ -56,6 +56,10 @@ class PosController extends Controller
             'tip_amount' => ['nullable', 'numeric', 'min:0'],
             'paid_amount' => ['required', 'numeric', 'min:0'],
             'payment_method' => ['required', 'string', 'in:cash,credit_card,debit_card,bank_transfer,loyalty_points,split'],
+            'split_payments' => ['nullable', 'array'],
+            'split_payments.*.method' => ['required_with:split_payments', 'string', 'in:cash,credit_card,debit_card,bank_transfer,loyalty_points'],
+            'split_payments.*.amount' => ['required_with:split_payments', 'numeric', 'min:0.01'],
+            'split_payments.*.reference' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
         ]);
 
@@ -67,10 +71,11 @@ class PosController extends Controller
 
             foreach ($validated['items'] as $item) {
                 if ($item['type'] === 'service') {
-                    $service = Service::findOrFail($item['id']);
+                    $service = Service::with('consumables.product')->findOrFail($item['id']);
                     $unitPrice = (float) $service->price;
                     $itemName = $service->name;
                     $productModel = null;
+                    $serviceModel = $service;
                 } else {
                     $product = Product::where('id', $item['id'])->lockForUpdate()->firstOrFail();
                     if ($product->stock_quantity < $item['quantity']) {
@@ -79,6 +84,7 @@ class PosController extends Controller
                     $unitPrice = (float) $product->retail_price;
                     $itemName = $product->name;
                     $productModel = $product;
+                    $serviceModel = null;
                 }
 
                 $itemSubtotal = round($unitPrice * $item['quantity'], 2);
@@ -93,6 +99,7 @@ class PosController extends Controller
                     'subtotal' => $itemSubtotal,
                     'therapist_id' => $item['therapist_id'] ?? null,
                     'product_model' => $productModel,
+                    'service_model' => $serviceModel,
                 ];
             }
 
@@ -107,8 +114,9 @@ class PosController extends Controller
             $paid = (float) $validated['paid_amount'];
             $change = max(0, round($paid - $total, 2));
 
-            // Loyalty Points validation & deduction if paying with points
             $customer = !empty($validated['customer_id']) ? Customer::lockForUpdate()->find($validated['customer_id']) : null;
+
+            // Handle loyalty points payment
             if ($validated['payment_method'] === 'loyalty_points') {
                 if (!$customer) {
                     throw new \RuntimeException("A registered customer profile is required to pay with Loyalty Points.");
@@ -121,7 +129,20 @@ class PosController extends Controller
                 $customer->decrement('loyalty_points', $pointsNeeded);
             }
 
-            $invoiceNumber = 'INV-' . Carbon::today()->format('Ymd') . '-' . strtoupper(Str::random(4));
+            // Sequential & Compliant Invoice Number Generation
+            $todayStr = Carbon::today()->format('Ymd');
+            $prefix = "INV-{$todayStr}-";
+            $lastInvoice = Invoice::where('invoice_number', 'LIKE', "{$prefix}%")
+                ->orderByDesc('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($lastInvoice && preg_match('/-(\d+)$/', $lastInvoice->invoice_number, $matches)) {
+                $nextSeq = intval($matches[1]) + 1;
+            } else {
+                $nextSeq = 1;
+            }
+            $invoiceNumber = $prefix . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
 
             $invoice = Invoice::create([
                 'invoice_number' => $invoiceNumber,
@@ -140,6 +161,46 @@ class PosController extends Controller
                 'payment_status' => $paid >= $total ? 'paid' : 'partial',
                 'notes' => $validated['notes'] ?? null,
             ]);
+
+            // Record Itemized Payments into payments table
+            if ($validated['payment_method'] === 'split' && !empty($validated['split_payments'])) {
+                $splitTotal = 0;
+                foreach ($validated['split_payments'] as $split) {
+                    $splitAmount = (float) $split['amount'];
+                    $splitTotal += $splitAmount;
+
+                    if ($split['method'] === 'loyalty_points') {
+                        if (!$customer) {
+                            throw new \RuntimeException("Registered customer profile required to use Loyalty Points in split payment.");
+                        }
+                        $pointsNeeded = (int) ceil($splitAmount * 10);
+                        if ($customer->loyalty_points < $pointsNeeded) {
+                            throw new \RuntimeException("Insufficient loyalty points for split amount \${$splitAmount}. Requires {$pointsNeeded} points.");
+                        }
+                        $customer->decrement('loyalty_points', $pointsNeeded);
+                    }
+
+                    Payment::create([
+                        'invoice_id' => $invoice->id,
+                        'payment_method' => $split['method'],
+                        'amount' => $splitAmount,
+                        'tendered_amount' => $splitAmount,
+                        'change_amount' => 0.00,
+                        'reference_number' => $split['reference'] ?? null,
+                        'notes' => 'Split payment item',
+                    ]);
+                }
+            } else {
+                Payment::create([
+                    'invoice_id' => $invoice->id,
+                    'payment_method' => $validated['payment_method'],
+                    'amount' => min($paid, $total),
+                    'tendered_amount' => $paid,
+                    'change_amount' => $change,
+                    'reference_number' => null,
+                    'notes' => 'Standard payment checkout',
+                ]);
+            }
 
             foreach ($resolvedItems as $item) {
                 $therapist = !empty($item['therapist_id']) ? User::find($item['therapist_id']) : null;
@@ -160,8 +221,8 @@ class PosController extends Controller
                     'commission_amount' => $commissionAmount,
                 ]);
 
-                // Create commission payout entry for therapist
-                if ($therapist && $commissionAmount > 0) {
+                // Create commission payout entry for therapist only if invoice is paid or partial with proportional threshold
+                if ($therapist && $commissionAmount > 0 && $invoice->payment_status === 'paid') {
                     CommissionPayout::create([
                         'therapist_id' => $therapist->id,
                         'invoice_item_id' => $invoiceItem->id,
@@ -185,6 +246,29 @@ class PosController extends Controller
                         'notes' => "POS Sale checkout",
                     ]);
                 }
+
+                // If service has backbar consumables, auto-deduct them
+                if ($item['type'] === 'service' && $item['service_model']) {
+                    $service = $item['service_model'];
+                    if ($service->consumables->isNotEmpty()) {
+                        foreach ($service->consumables as $consumable) {
+                            $prod = Product::where('id', $consumable->product_id)->lockForUpdate()->first();
+                            if ($prod) {
+                                $usedQty = $consumable->quantity_used * $item['quantity'];
+                                $prod->decrement('stock_quantity', $usedQty);
+                                StockMovement::create([
+                                    'product_id' => $prod->id,
+                                    'user_id' => Auth::id(),
+                                    'type' => 'service_usage',
+                                    'quantity' => -$usedQty,
+                                    'unit_cost' => $prod->cost_price,
+                                    'reference_number' => $invoice->invoice_number,
+                                    'notes' => "Auto backbar usage for {$service->name} on invoice {$invoice->invoice_number}",
+                                ]);
+                            }
+                        }
+                    }
+                }
             }
 
             // If attached to an appointment, complete it
@@ -203,7 +287,7 @@ class PosController extends Controller
             DB::commit();
 
             return redirect()->route('pos.invoices.show', $invoice)
-                ->with('success', "Payment processed! Invoice {$invoice->invoice_number} created.");
+                ->with('success', "Payment processed! Sequential Invoice {$invoice->invoice_number} created.");
         } catch (\Throwable $e) {
             DB::rollBack();
             return back()->withInput()->with('error', 'Checkout failed: ' . $e->getMessage());
@@ -246,7 +330,86 @@ class PosController extends Controller
      */
     public function showInvoice(Invoice $invoice)
     {
-        $invoice->load(['customer', 'cashier', 'appointment', 'items.therapist']);
+        $invoice->load(['customer', 'cashier', 'appointment', 'items.therapist', 'payments']);
         return view('pos.show_invoice', compact('invoice'));
+    }
+
+    /**
+     * Process Refund & Stock / Commission Reversal.
+     */
+    public function refund(Request $request, Invoice $invoice)
+    {
+        $request->validate([
+            'refund_reason' => ['required', 'string', 'max:255'],
+        ]);
+
+        if (!in_array($invoice->payment_status, ['paid', 'partial'])) {
+            return back()->with('error', 'Only paid or partial invoices can be refunded.');
+        }
+
+        DB::beginTransaction();
+        try {
+            $invoice->update([
+                'payment_status' => 'refunded',
+                'notes' => trim(($invoice->notes ?? '') . "\n[REFUNDED by " . Auth::user()->name . ']: ' . $request->input('refund_reason')),
+            ]);
+
+            // 1. Restock retail products
+            foreach ($invoice->items as $item) {
+                if ($item->item_type === 'product' && $item->product_id) {
+                    $product = Product::where('id', $item->product_id)->lockForUpdate()->first();
+                    if ($product) {
+                        $product->increment('stock_quantity', $item->quantity);
+                        StockMovement::create([
+                            'product_id' => $product->id,
+                            'user_id' => Auth::id(),
+                            'type' => 'adjustment',
+                            'quantity' => $item->quantity,
+                            'unit_cost' => $product->cost_price,
+                            'reference_number' => $invoice->invoice_number,
+                            'notes' => 'Restocked due to refund on invoice: ' . $invoice->invoice_number,
+                        ]);
+                    }
+                }
+            }
+
+            // 2. Clawback / cancel therapist commissions
+            $payouts = CommissionPayout::whereHas('invoiceItem', fn($q) => $q->where('invoice_id', $invoice->id))->get();
+            foreach ($payouts as $payout) {
+                if ($payout->status === 'pending') {
+                    $payout->update(['status' => 'cancelled', 'notes' => 'Cancelled due to invoice refund: ' . $invoice->invoice_number]);
+                } elseif ($payout->status === 'paid') {
+                    CommissionPayout::create([
+                        'therapist_id' => $payout->therapist_id,
+                        'invoice_item_id' => $payout->invoice_item_id,
+                        'amount' => -$payout->amount,
+                        'status' => 'pending',
+                        'notes' => 'Commission clawback for refunded invoice: ' . $invoice->invoice_number,
+                    ]);
+                }
+            }
+
+            // 3. Reverse customer loyalty points if awarded
+            if ($invoice->customer_id) {
+                $customer = Customer::lockForUpdate()->find($invoice->customer_id);
+                if ($customer && $invoice->payment_method !== 'loyalty_points') {
+                    $pointsAwarded = (int) floor($invoice->total_amount / 10);
+                    if ($pointsAwarded > 0) {
+                        $customer->decrement('loyalty_points', min($customer->loyalty_points, $pointsAwarded));
+                    }
+                }
+                // If paid by loyalty points, refund them
+                if ($customer && $invoice->payment_method === 'loyalty_points') {
+                    $pointsSpent = (int) ceil($invoice->total_amount * 10);
+                    $customer->increment('loyalty_points', $pointsSpent);
+                }
+            }
+
+            DB::commit();
+            return back()->with('success', "Invoice {$invoice->invoice_number} has been refunded, stock restored, and commissions adjusted.");
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return back()->with('error', 'Refund failed: ' . $e->getMessage());
+        }
     }
 }

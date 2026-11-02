@@ -97,6 +97,9 @@
                                                     </div>
                                                     <div class="text-muted small" style="font-size: 0.72rem;">
                                                         {{ $svc->category->name }} &bull; {{ $svc->duration_minutes }} min (+{{ $svc->buffer_time_minutes }}m buffer)
+                                                        @if($svc->requires_room)
+                                                            <span class="badge bg-warning text-dark ms-1" style="font-size: 0.62rem;"><i class="bi bi-door-open me-1"></i>Private Room Required</span>
+                                                        @endif
                                                     </div>
                                                 </label>
                                             </div>

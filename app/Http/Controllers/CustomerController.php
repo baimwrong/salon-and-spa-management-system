@@ -105,6 +105,10 @@ class CustomerController extends Controller
             'status' => ['required', 'string', 'in:active,inactive,vip,blocked'],
         ]);
 
+        if (!auth()->user()->isManager()) {
+            unset($validated['loyalty_points']);
+        }
+
         $customer->update($validated);
 
         return redirect()->route('customers.show', $customer)
@@ -113,6 +117,10 @@ class CustomerController extends Controller
 
     public function destroy(Customer $customer)
     {
+        if (!auth()->user()->isManager()) {
+            return back()->with('error', 'Only managers and administrators can delete customer records.');
+        }
+
         if ($customer->invoices()->exists() || $customer->appointments()->where('status', '!=', 'cancelled')->exists()) {
             return back()->with('error', "Cannot delete {$customer->name} because active booking or financial invoice history exists. Set client status to 'blocked' or 'inactive' instead.");
         }

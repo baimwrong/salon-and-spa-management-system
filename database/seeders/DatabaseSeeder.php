@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Service;
 use App\Models\ServiceCategory;
+use App\Models\ServiceConsumable;
 use App\Models\SpaRoom;
 use App\Models\StaffSchedule;
 use App\Models\StockMovement;
@@ -232,6 +233,26 @@ class DatabaseSeeder extends Seeder
         $productModels = [];
         foreach ($productsData as $p) {
             $productModels[$p['sku']] = Product::firstOrCreate(['sku' => $p['sku']], $p);
+        }
+
+        // Link Services to Backbar Consumables (Service Recipes / BOM)
+        if (isset($serviceModels['HAIR-03'], $productModels['PRD-HR-003'])) {
+            ServiceConsumable::firstOrCreate(
+                ['service_id' => $serviceModels['HAIR-03']->id, 'product_id' => $productModels['PRD-HR-003']->id],
+                ['quantity_used' => 1, 'unit' => 'jar']
+            );
+        }
+        if (isset($serviceModels['FAC-01'], $productModels['PRD-SK-001'])) {
+            ServiceConsumable::firstOrCreate(
+                ['service_id' => $serviceModels['FAC-01']->id, 'product_id' => $productModels['PRD-SK-001']->id],
+                ['quantity_used' => 1, 'unit' => 'bottle']
+            );
+        }
+        if (isset($serviceModels['MSG-01'], $productModels['PRD-BD-001'])) {
+            ServiceConsumable::firstOrCreate(
+                ['service_id' => $serviceModels['MSG-01']->id, 'product_id' => $productModels['PRD-BD-001']->id],
+                ['quantity_used' => 1, 'unit' => 'bottle']
+            );
         }
 
         // 6. Customers

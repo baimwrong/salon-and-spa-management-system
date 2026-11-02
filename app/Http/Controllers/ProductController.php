@@ -130,26 +130,40 @@ class ProductController extends Controller
             'notes' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $quantity = $validated['quantity'];
+        $quantity = (int) $validated['quantity'];
         // If damage or usage, ensure negative
         if (in_array($validated['type'], ['damage', 'service_usage']) && $quantity > 0) {
             $quantity = -$quantity;
         }
 
-        $newStock = max(0, $product->stock_quantity + $quantity);
-        $product->update(['stock_quantity' => $newStock]);
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            $lockedProduct = Product::where('id', $product->id)->lockForUpdate()->firstOrFail();
 
-        StockMovement::create([
-            'product_id' => $product->id,
-            'user_id' => Auth::id(),
-            'type' => $validated['type'],
-            'quantity' => $quantity,
-            'unit_cost' => $validated['unit_cost'] ?? $product->cost_price,
-            'reference_number' => $validated['reference_number'] ?? null,
-            'notes' => $validated['notes'] ?? null,
-        ]);
+            if ($quantity < 0 && $lockedProduct->stock_quantity < abs($quantity)) {
+                throw new \RuntimeException("Cannot deduct " . abs($quantity) . " units. Current stock is only {$lockedProduct->stock_quantity}.");
+            }
 
-        return back()->with('success', "Stock updated for {$product->name}. Current stock: {$newStock} {$product->unit}.");
+            $lockedProduct->stock_quantity += $quantity;
+            $lockedProduct->save();
+
+            StockMovement::create([
+                'product_id' => $lockedProduct->id,
+                'user_id' => Auth::id(),
+                'type' => $validated['type'],
+                'quantity' => $quantity,
+                'unit_cost' => $validated['unit_cost'] ?? $lockedProduct->cost_price,
+                'reference_number' => $validated['reference_number'] ?? null,
+                'notes' => $validated['notes'] ?? null,
+            ]);
+
+            \Illuminate\Support\Facades\DB::commit();
+
+            return back()->with('success', "Stock updated for {$lockedProduct->name}. Current stock: {$lockedProduct->stock_quantity} {$lockedProduct->unit}.");
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            return back()->with('error', 'Restock failed: ' . $e->getMessage());
+        }
     }
 
     public function destroy(Product $product)

@@ -44,11 +44,14 @@ Route::middleware('auth')->group(function () {
     // Customer Relationship Management (CRM)
     Route::resource('customers', CustomerController::class);
 
-    // Front Desk POS & Billing
-    Route::get('/pos', [PosController::class, 'terminal'])->name('pos.terminal');
-    Route::post('/pos/checkout', [PosController::class, 'checkout'])->name('pos.checkout');
-    Route::get('/pos/invoices', [PosController::class, 'invoices'])->name('pos.invoices.index');
-    Route::get('/pos/invoices/{invoice}', [PosController::class, 'showInvoice'])->name('pos.invoices.show');
+    // Front Desk POS & Billing (Admin, Manager, Receptionist)
+    Route::middleware('role:admin,manager,receptionist')->group(function () {
+        Route::get('/pos', [PosController::class, 'terminal'])->name('pos.terminal');
+        Route::post('/pos/checkout', [PosController::class, 'checkout'])->name('pos.checkout');
+        Route::get('/pos/invoices', [PosController::class, 'invoices'])->name('pos.invoices.index');
+        Route::get('/pos/invoices/{invoice}', [PosController::class, 'showInvoice'])->name('pos.invoices.show');
+        Route::post('/pos/invoices/{invoice}/refund', [PosController::class, 'refund'])->name('pos.invoices.refund')->middleware('role:admin,manager');
+    });
 
     // Management & Administration Routes
     Route::middleware('role:admin,manager')->group(function () {
